@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator
+  labels:
+    app: orchestrator
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: orchestrator
+  template:
+    metadata:
+      labels:
+        app: orchestrator
+    spec:
+      serviceAccountName: orchestrator
+      # Anti-affinité stricte : force 1 pod par nœud maximum,
+      # essentiel pour que "tuer le leader" = "tuer un nœud" ait un sens en démo
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: orchestrator
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: orchestrator
+          image: ghcr.io/empty-bot/k8s-cicd-leader-election/orchestrator:latest
+          imagePullPolicy: Always
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+      imagePullSecrets:
+        - name: ghcr-pull-secret
