@@ -129,7 +129,11 @@ func verifySignature(signatureHeader string, body []byte) bool {
 }
 
 func triggerDeployment(clientset *kubernetes.Clientset, commitSHA string) error {
-	newImage := imageRepo + ":" + commitSHA
+	shortSHA := commitSHA
+	if len(commitSHA) > 7 {
+		shortSHA = commitSHA[:7]
+	}
+	newImage := imageRepo + ":" + shortSHA
 
 	patch := []byte(`{"spec":{"template":{"spec":{"containers":[{"name":"` + targetContainer + `","image":"` + newImage + `"}]}}}}`)
 
