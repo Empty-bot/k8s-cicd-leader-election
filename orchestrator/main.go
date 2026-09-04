@@ -72,7 +72,7 @@ func main() {
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
 				log.Printf("[%s] Je deviens LEADER — je vais piloter les déploiements", identity)
-				runAsLeader(ctx, clientset)
+				runAsLeader(ctx, clientset, identity)
 			},
 			OnStoppedLeading: func() {
 				log.Printf("[%s] Je perds le leadership", identity)
@@ -89,6 +89,6 @@ func main() {
 
 // runAsLeader contiendra la logique métier (webhook GitHub + déploiement).
 // Pour l'instant, on se contente de prouver que le leadership fonctionne.
-func runAsLeader(ctx context.Context, clientset *kubernetes.Clientset) {
-	<-ctx.Done()
+func runAsLeader(ctx context.Context, clientset *kubernetes.Clientset, identity string) {
+	startWebhookServer(ctx, clientset, identity)
 }
