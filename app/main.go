@@ -8,6 +8,7 @@ import (
 	"os"
 )
 
+// Commentaire de test #1
 // Version est injectée au build via -ldflags, pour visualiser
 // concrètement chaque nouveau déploiement en démo.
 var Version = "dev"
