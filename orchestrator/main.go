@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,20 +19,26 @@ import (
 const (
 	leaseName      = "orchestrator-leader"
 	leaseNamespace = "default"
+	healthzPort    = "8080"
 )
 
 var Version = "dev"
 
 func main() {
-	// Identité unique de cette instance (utile pour voir qui est leader en démo)
 	nodeName := os.Getenv("NODE_NAME")
 	if nodeName == "" {
 		nodeName = "unknown-node"
 	}
 	identity := nodeName + "_" + string(uuid.NewUUID())[:8]
+
 	log.Printf("[%s] Démarrage de l'orchestrateur (version %s)", identity, Version)
-	// Config in-cluster : l'orchestrateur tourne comme pod dans le cluster
-	// et s'authentifie via son ServiceAccount, pas via un kubeconfig externe.
+
+	// Serveur healthz permanent : tourne sur TOUS les pods, en continu,
+	// dès le démarrage — indépendant de l'élection. C'est ce qui permet
+	// au readinessProbe Kubernetes de savoir que le pod est vivant,
+	// et donc de le garder comme endpoint valide du Service.
+	go startHealthzServer(identity)
+
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		log.Fatalf("Impossible de charger la config in-cluster : %v", err)
@@ -53,8 +60,6 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Arrêt propre sur SIGTERM (important pour simuler une panne
-	// contrôlée en démo, et pour le bon fonctionnement sous Kubernetes)
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
@@ -72,7 +77,7 @@ func main() {
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
 				log.Printf("[%s] Je deviens LEADER — je vais piloter les déploiements", identity)
-				runAsLeader(ctx, clientset, identity)
+				startWebhookServer(ctx, clientset, identity)
 			},
 			OnStoppedLeading: func() {
 				log.Printf("[%s] Je perds le leadership", identity)
@@ -87,8 +92,14 @@ func main() {
 	})
 }
 
-// runAsLeader contiendra la logique métier (webhook GitHub + déploiement).
-// Pour l'instant, on se contente de prouver que le leadership fonctionne.
-func runAsLeader(ctx context.Context, clientset *kubernetes.Clientset, identity string) {
-	startWebhookServer(ctx, clientset, identity)
+func startHealthzServer(identity string) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+	log.Printf("[%s] Serveur healthz permanent démarré sur :%s", identity, healthzPort)
+	if err := http.ListenAndServe(":"+healthzPort, mux); err != nil {
+		log.Fatalf("[%s] Erreur serveur healthz : %v", identity, err)
+	}
 }

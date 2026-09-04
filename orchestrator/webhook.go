@@ -11,13 +11,13 @@ import (
 	"net/http"
 	"os"
 
-	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 )
 
 const (
+	webhookPort      = "8081"
 	targetDeployment = "hello-app"
 	targetNamespace  = "default"
 	targetContainer  = "hello-app"
@@ -25,24 +25,19 @@ const (
 )
 
 type githubPushPayload struct {
-	After string `json:"after"` // SHA du dernier commit du push
+	After string `json:"after"`
 	Ref   string `json:"ref"`
 }
 
 func startWebhookServer(ctx context.Context, clientset *kubernetes.Clientset, identity string) {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
-	})
-
 	mux.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
 		handleWebhook(w, r, clientset, identity)
 	})
 
 	srv := &http.Server{
-		Addr:    ":8080",
+		Addr:    ":" + webhookPort,
 		Handler: mux,
 	}
 
@@ -52,7 +47,7 @@ func startWebhookServer(ctx context.Context, clientset *kubernetes.Clientset, id
 		srv.Close()
 	}()
 
-	log.Printf("[%s] Serveur webhook démarré sur :8080", identity)
+	log.Printf("[%s] Serveur webhook démarré sur :%s", identity, webhookPort)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Printf("[%s] Erreur serveur webhook : %v", identity, err)
 	}
@@ -122,6 +117,3 @@ func triggerDeployment(clientset *kubernetes.Clientset, commitSHA string) error 
 	)
 	return err
 }
-
-// Empêche les imports non utilisés si appsv1 n'est pas encore référencé ailleurs
-var _ = appsv1.Deployment{}
