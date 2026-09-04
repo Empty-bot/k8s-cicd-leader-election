@@ -29,9 +29,31 @@ type githubPushPayload struct {
 	Ref   string `json:"ref"`
 }
 
-func startWebhookServer(ctx context.Context, clientset *kubernetes.Clientset, identity string) {
-	mux := http.NewServeMux()
+func setLeaderLabel(clientset *kubernetes.Clientset, podName, namespace string, isLeader bool) error {
+	value := "false"
+	if isLeader {
+		value = "true"
+	}
+	patch := []byte(`{"metadata":{"labels":{"role-leader":"` + value + `"}}}`)
+	_, err := clientset.CoreV1().Pods(namespace).Patch(
+		context.Background(),
+		podName,
+		types.StrategicMergePatchType,
+		patch,
+		metav1.PatchOptions{},
+	)
+	return err
+}
 
+func startWebhookServer(ctx context.Context, clientset *kubernetes.Clientset, identity string) {
+	podName := os.Getenv("POD_NAME")
+	namespace := "default"
+
+	if err := setLeaderLabel(clientset, podName, namespace, true); err != nil {
+		log.Printf("[%s] Impossible de poser le label leader : %v", identity, err)
+	}
+
+	mux := http.NewServeMux()
 	mux.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
 		handleWebhook(w, r, clientset, identity)
 	})
@@ -44,6 +66,9 @@ func startWebhookServer(ctx context.Context, clientset *kubernetes.Clientset, id
 	go func() {
 		<-ctx.Done()
 		log.Printf("[%s] Arrêt du serveur webhook", identity)
+		if err := setLeaderLabel(clientset, podName, namespace, false); err != nil {
+			log.Printf("[%s] Impossible de retirer le label leader : %v", identity, err)
+		}
 		srv.Close()
 	}()
 
